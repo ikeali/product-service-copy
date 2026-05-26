@@ -1,5 +1,89 @@
-name: PRODUCT SERVICE CI/CD
+# name: PRODUCT SERVICE CI/CD
 
+
+# permissions:
+#   contents: write
+#   packages: write
+
+# on:
+#   push:
+#     branches:
+#       - main
+#       - feature/**
+#     paths:
+#       - 'product-service/**'
+#       - '.github/workflows/product-service.yml'
+
+#   workflow_dispatch:
+
+# jobs:
+#   build-and-push:
+#     if: github.actor != 'github-actions[bot]'
+#     runs-on: ubuntu-latest
+
+#     # env:
+#     #   AWS_REGION: ${{ secrets.AWS_REGION }}
+#     #   ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+#     #   IMAGE_NAME: product-service
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
+#         with:
+#           token: ${{ secrets.GITHUB_TOKEN }}
+
+#       # - name: Configure AWS Credentials
+#       - name: Login to GHCR
+#         run: echo "${{secrets.GITHUB_TOKEN}}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        
+#         # uses: aws-actions/configure-aws-credentials@v2
+#         # with:
+#         #   aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#         #   aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#         #   aws-region: ${{ env.AWS_REGION }}
+
+#       # - name: Login to ECR
+#       #   run: |
+#       #     aws ecr get-login-password --region $AWS_REGION | \
+#       #     docker login --username AWS --password-stdin \
+#       #     $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+
+#       - name: Build Docker Image
+#         run: |
+#           # docker build -t $IMAGE_NAME ./product-service
+#           docker build -t ghcr.io/${{ github.actor }}/product-service:${{ github.sha }} ./product-service
+
+#       # - name: Tag Image
+#       #   run: |
+#       #     IMAGE_URI=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_NAME:${{ github.sha }}
+#       #     docker tag $IMAGE_NAME:latest $IMAGE_URI
+#       #     echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+#       # - name: Push Image to ECR
+#       - name: Push Image
+#         run: |
+#           docker push ghcr.io/${{ github.actor }}/product-service:${{ github.sha }}
+
+#       - name: Update Helm Chart Image Tag
+#         run: |
+#           sed -i 's/tag:.*/tag: "${{ github.sha }}"/' helm/product-service/values.yaml
+
+#       - name: Commit Updated Helm Values
+#         run: |
+#           git config --global user.email "github-actions@github.com"
+#           git config --global user.name "github-actions"
+
+#           git add helm/product-service/values.yaml
+
+#           git commit -m "Update product-service image tag to ${{ github.sha }}" \
+#           || echo "No changes to commit"
+
+#       - name: Push Changes
+#         run: |
+#           git push
+
+
+name: PRODUCT SERVICE CI/CD
 
 permissions:
   contents: write
@@ -10,10 +94,6 @@ on:
     branches:
       - main
       - feature/**
-    paths:
-      - 'product-service/**'
-      - '.github/workflows/product-service.yml'
-
   workflow_dispatch:
 
 jobs:
@@ -21,63 +101,46 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
 
-    # env:
-    #   AWS_REGION: ${{ secrets.AWS_REGION }}
-    #   ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-    #   IMAGE_NAME: product-service
-
     steps:
-      - name: Checkout code
+      - name: Checkout product-service repo
         uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # - name: Configure AWS Credentials
       - name: Login to GHCR
-        run: echo "${{secrets.GITHUB_TOKEN}}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-        
-        # uses: aws-actions/configure-aws-credentials@v2
-        # with:
-        #   aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        #   aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        #   aws-region: ${{ env.AWS_REGION }}
-
-      # - name: Login to ECR
-      #   run: |
-      #     aws ecr get-login-password --region $AWS_REGION | \
-      #     docker login --username AWS --password-stdin \
-      #     $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+          docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build Docker Image
         run: |
-          # docker build -t $IMAGE_NAME ./product-service
-          docker build -t ghcr.io/${{ github.actor }}/product-service:${{ github.sha }} ./product-service
+          docker build \
+          -t ghcr.io/plainmarket/product-service:${{ github.sha }} .
 
-      # - name: Tag Image
-      #   run: |
-      #     IMAGE_URI=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_NAME:${{ github.sha }}
-      #     docker tag $IMAGE_NAME:latest $IMAGE_URI
-      #     echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
-
-      # - name: Push Image to ECR
       - name: Push Image
         run: |
-          docker push ghcr.io/${{ github.actor }}/product-service:${{ github.sha }}
+          docker push ghcr.io/plainmarket/product-service:${{ github.sha }}
 
-      - name: Update Helm Chart Image Tag
+      # ── GitOps update ──────────────────────────────────────────
+      - name: Clone GitOps Repo
         run: |
-          sed -i 's/tag:.*/tag: "${{ github.sha }}"/' helm/product-service/values.yaml
+          git clone \
+            https://x-access-token:${{ secrets.GITOPS_TOKEN }}@github.com/PlainMarket/gitops-infra.git \
+            gitops-infra
 
-      - name: Commit Updated Helm Values
+      - name: Update Image Tag in GitOps Repo
         run: |
-          git config --global user.email "github-actions@github.com"
-          git config --global user.name "github-actions"
+          sed -i 's/tag:.*/tag: "${{ github.sha }}"/' \
+            gitops-infra/helm/product-service/values.yaml
+
+      - name: Commit and Push to GitOps Repo
+        run: |
+          cd gitops-infra
+
+          git config user.email "github-actions@github.com"
+          git config user.name "github-actions"
 
           git add helm/product-service/values.yaml
 
-          git commit -m "Update product-service image tag to ${{ github.sha }}" \
-          || echo "No changes to commit"
+          git commit -m "ci: update product-service image to ${{ github.sha }}" \
+            || echo "No changes to commit"
 
-      - name: Push Changes
-        run: |
           git push
